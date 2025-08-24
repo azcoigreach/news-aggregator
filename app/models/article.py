@@ -49,7 +49,7 @@ class Article(Base):
     
     fact_checks = relationship("FactCheck", back_populates="article")
     summaries = relationship("Summary", back_populates="article")
-    correlations = relationship("Correlation", back_populates="article")
+    correlations = relationship("Correlation", back_populates="article", foreign_keys="[Correlation.article_id]")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

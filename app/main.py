@@ -44,8 +44,13 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         logger.info("Database initialized successfully")
+        
+        # Initialize API-driven configuration system
+        settings.initialize_defaults()
+        logger.info("Configuration system initialized")
+        
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize application: {e}")
         raise
     
     yield

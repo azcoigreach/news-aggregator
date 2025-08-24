@@ -1,155 +1,192 @@
 """
 Configuration management for the News Aggregator application.
+
+IMPORTANT: Configuration Architecture
+=====================================
+
+This application uses a two-tier configuration system:
+
+1. BOOTSTRAP CONFIGURATION (this file):
+   - Only contains minimal settings required to start the application
+   - Database connection, Redis connection, basic server settings
+   - Should be deployment-specific, not user-specific
+   - Configured via bootstrap.conf file or environment variables
+
+2. API-DRIVEN CONFIGURATION:
+   - All user-configurable settings (API keys, crawling preferences, etc.)
+   - Stored in database and managed through REST API endpoints
+   - Can be changed at runtime without restart
+   - Provides web UI for configuration management
+
+DEVELOPMENT PRINCIPLE: 
+- Backend should have MINIMAL configuration needed to bootstrap
+- Everything else should be configurable through the API/UI
+- No .env files for user settings
 """
-from typing import List, Optional
-from pydantic import BaseSettings, Field, validator
-from pydantic_settings import BaseSettings
+from typing import Optional, Any
+from .bootstrap_config import bootstrap_settings
 
 
-class DatabaseSettings(BaseSettings):
-    """Database configuration settings."""
-    url: str = Field(default="postgresql://postgres:password@localhost:5432/news_aggregator")
-    echo: bool = Field(default=False)
-    pool_size: int = Field(default=10)
-    max_overflow: int = Field(default=20)
-    
-    class Config:
-        env_prefix = "DATABASE_"
+def get_config_service():
+    """Lazy import to avoid circular dependencies."""
+    from ..services.configuration_service import config_service
+    return config_service
 
 
-class RedisSettings(BaseSettings):
-    """Redis configuration settings."""
-    url: str = Field(default="redis://localhost:6379/0")
-    host: str = Field(default="localhost")
-    port: int = Field(default=6379)
-    db: int = Field(default=0)
-    password: Optional[str] = Field(default=None)
+def get_api_configuration(key: str, category: str = None, default: Any = None) -> Any:
+    """
+    Get configuration from API-driven configuration service.
     
-    class Config:
-        env_prefix = "REDIS_"
+    Args:
+        key: Configuration key
+        category: Optional category filter  
+        default: Default value if not found
+        
+    Returns:
+        Configuration value from database or default
+    """
+    try:
+        config_service = get_config_service()
+        return config_service.get_configuration(key, category, default)
+    except ImportError:
+        # During startup, service may not be available yet
+        return default
 
 
-class CelerySettings(BaseSettings):
-    """Celery configuration settings."""
-    broker_url: str = Field(default="redis://localhost:6379/0")
-    result_backend: str = Field(default="redis://localhost:6379/0")
-    task_serializer: str = Field(default="json")
-    result_serializer: str = Field(default="json")
-    accept_content: List[str] = Field(default=["json"])
-    timezone: str = Field(default="UTC")
-    enable_utc: bool = Field(default=True)
+def set_api_configuration(
+    key: str, 
+    value: Any, 
+    category: str,
+    description: str = None,
+    changed_by: str = "api"
+) -> bool:
+    """
+    Set configuration value through API-driven configuration service.
     
-    class Config:
-        env_prefix = "CELERY_"
+    Args:
+        key: Configuration key
+        value: Configuration value
+        category: Configuration category
+        description: Optional description
+        changed_by: Who made the change
+        
+    Returns:
+        True if successful
+    """
+    try:
+        config_service = get_config_service()
+        return config_service.set_configuration(
+            key=key,
+            value=value, 
+            category=category,
+            description=description,
+            changed_by=changed_by
+        )
+    except ImportError:
+        # During startup, service may not be available yet
+        return False
 
 
-class OpenAISettings(BaseSettings):
-    """OpenAI API configuration settings."""
-    api_key: Optional[str] = Field(default=None)
-    model: str = Field(default="gpt-4")
-    max_tokens: int = Field(default=2000)
-    temperature: float = Field(default=0.1)
+class ApplicationSettings:
+    """
+    Application settings that combine bootstrap and API-driven configuration.
     
-    class Config:
-        env_prefix = "OPENAI_"
-
-
-class ClaudeSettings(BaseSettings):
-    """Claude API configuration settings."""
-    api_key: Optional[str] = Field(default=None)
-    model: str = Field(default="claude-3-sonnet-20240229")
-    max_tokens: int = Field(default=2000)
-    temperature: float = Field(default=0.1)
+    This class provides a unified interface to access both bootstrap settings
+    (required to start the app) and API-driven settings (user-configurable).
+    """
     
-    class Config:
-        env_prefix = "CLAUDE_"
-
-
-class MCPSettings(BaseSettings):
-    """MCP configuration settings."""
-    enabled: bool = Field(default=True)
-    servers: List[str] = Field(default=[])
-    timeout: int = Field(default=30)
+    def __init__(self):
+        self.bootstrap = bootstrap_settings
     
-    class Config:
-        env_prefix = "MCP_"
-
-
-class CrawlerSettings(BaseSettings):
-    """Web crawler configuration settings."""
-    user_agent: str = Field(default="NewsAggregator/1.0")
-    request_delay: float = Field(default=1.0)
-    max_concurrent_requests: int = Field(default=16)
-    download_timeout: int = Field(default=30)
-    retry_times: int = Field(default=3)
+    # Bootstrap settings (passthrough)
+    @property
+    def app_name(self) -> str:
+        return self.bootstrap.app_name
     
-    class Config:
-        env_prefix = "CRAWLER_"
-
-
-class FactCheckerSettings(BaseSettings):
-    """Fact checker configuration settings."""
-    confidence_threshold: float = Field(default=0.8)
-    max_verification_attempts: int = Field(default=3)
-    cross_reference_sources: int = Field(default=5)
-    enable_llm_validation: bool = Field(default=True)
+    @property 
+    def version(self) -> str:
+        return self.bootstrap.version
+        
+    @property
+    def host(self) -> str:
+        return self.bootstrap.host
+        
+    @property
+    def port(self) -> int:
+        return self.bootstrap.port
+        
+    @property
+    def debug(self) -> bool:
+        return self.bootstrap.debug
+        
+    @property
+    def log_level(self) -> str:
+        return self.bootstrap.log_level
+        
+    @property
+    def secret_key(self) -> str:
+        # Try to get from API config first, fallback to bootstrap
+        api_secret = get_api_configuration("secret_key", "security")
+        return api_secret if api_secret else self.bootstrap.secret_key
     
-    class Config:
-        env_prefix = "FACT_CHECKER_"
-
-
-class AppSettings(BaseSettings):
-    """Main application configuration settings."""
-    # Application
-    app_name: str = Field(default="News Aggregator")
-    version: str = Field(default="0.1.0")
-    debug: bool = Field(default=False)
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
+    @property
+    def database(self):
+        return self.bootstrap.database
+        
+    @property
+    def redis(self):
+        return self.bootstrap.redis
+        
+    @property
+    def celery(self):
+        return self.bootstrap.celery
     
-    # Security
-    secret_key: str = Field(default="your-secret-key-change-in-production")
-    algorithm: str = Field(default="HS256")
-    access_token_expire_minutes: int = Field(default=30)
+    # API-driven settings
+    @property
+    def openai_api_key(self) -> Optional[str]:
+        return get_api_configuration("openai_api_key", "ai_models", "")
     
-    # Logging
-    log_level: str = Field(default="INFO")
-    log_format: str = Field(default="json")
+    @property
+    def openai_model(self) -> str:
+        return get_api_configuration("openai_model", "ai_models", "gpt-4")
     
-    # Database
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    @property
+    def claude_api_key(self) -> Optional[str]:
+        return get_api_configuration("claude_api_key", "ai_models", "")
     
-    # Redis
-    redis: RedisSettings = Field(default_factory=RedisSettings)
+    @property
+    def claude_model(self) -> str:
+        return get_api_configuration("claude_model", "ai_models", "claude-3-sonnet-20240229")
     
-    # Celery
-    celery: CelerySettings = Field(default_factory=CelerySettings)
+    @property
+    def crawler_user_agent(self) -> str:
+        return get_api_configuration("crawler_user_agent", "crawler", "NewsAggregator/1.0")
     
-    # AI Models
-    openai: OpenAISettings = Field(default_factory=OpenAISettings)
-    claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
+    @property
+    def crawler_delay(self) -> float:
+        return get_api_configuration("crawler_delay", "crawler", 1.0)
     
-    # MCP
-    mcp: MCPSettings = Field(default_factory=MCPSettings)
+    @property
+    def max_concurrent_requests(self) -> int:
+        return get_api_configuration("max_concurrent_requests", "crawler", 16)
     
-    # Crawler
-    crawler: CrawlerSettings = Field(default_factory=CrawlerSettings)
+    @property
+    def fact_check_confidence_threshold(self) -> float:
+        return get_api_configuration("fact_check_confidence_threshold", "fact_checker", 0.8)
     
-    # Fact Checker
-    fact_checker: FactCheckerSettings = Field(default_factory=FactCheckerSettings)
+    @property
+    def max_verification_attempts(self) -> int:
+        return get_api_configuration("max_verification_attempts", "fact_checker", 3)
     
-    @validator("secret_key")
-    def validate_secret_key(cls, v):
-        if v == "your-secret-key-change-in-production":
-            import secrets
-            return secrets.token_urlsafe(32)
-        return v
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    def initialize_defaults(self):
+        """Initialize default API-driven configurations."""
+        try:
+            config_service = get_config_service()
+            config_service.initialize_default_configurations()
+        except ImportError:
+            # During startup, service may not be available yet
+            pass
 
 
 # Global settings instance
-settings = AppSettings()
+settings = ApplicationSettings()

@@ -75,14 +75,37 @@ A Python-based autonomous news aggregation and fact-checking application that cr
    cd news-aggregator
    ```
 
-2. **Start the application**
+2. **Configure bootstrap settings** (minimal infrastructure config):
+   ```bash
+   # Edit bootstrap.conf with your database and Redis URLs
+   # Default settings work with docker-compose
+   cat bootstrap.conf
+   ```
+
+3. **Start the application**
    ```bash
    docker-compose up -d
    ```
 
-3. **Access the application**
+4. **Initialize configuration** (all user settings via API):
+   ```bash
+   # Initialize default configurations
+   curl -X POST "http://localhost:8000/api/v1/configuration/initialize"
+   
+   # Set your OpenAI API key
+   curl -X POST "http://localhost:8000/api/v1/configuration/" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "key": "openai_api_key",
+       "value": "your-api-key-here",
+       "category": "ai_models"
+     }'
+   ```
+
+5. **Access the application**
    - API Documentation: http://localhost:8000/docs
-   - Health Check: http://localhost:8000/health
+   - Health Check: http://localhost:8000/api/v1/health
+   - Configuration API: http://localhost:8000/api/v1/configuration/
 
 ### Manual Setup
 
@@ -108,23 +131,68 @@ A Python-based autonomous news aggregation and fact-checking application that cr
 
 ## 🔧 Configuration
 
-### API Configuration
+### Configuration Architecture
 
-The application uses an API-driven configuration system. All user settings are managed through REST endpoints:
+The News Aggregator uses a **two-tier configuration system** for clean separation of concerns:
 
-- **Topics**: Define news topics to monitor
-- **Sources**: Configure news sources and crawling parameters
-- **AI Models**: Set API keys and model preferences
-- **Processing Rules**: Configure fact-checking and summarization parameters
+#### 1. Bootstrap Configuration (`bootstrap.conf`)
+- **Purpose**: Minimal settings required to start the application
+- **Contents**: Database URL, Redis URL, server settings
+- **Managed by**: System administrators, deployment tools
+- **Scope**: Infrastructure and deployment-specific settings
 
-### Backend Configuration
+#### 2. API-Driven Configuration
+- **Purpose**: All user-configurable application settings
+- **Contents**: AI model keys, crawling preferences, fact-checking parameters
+- **Managed by**: Users through REST API endpoints (`/api/v1/configuration/`)
+- **Scope**: Business logic and user preferences
 
-Core functionality settings are maintained in configuration files:
+### Quick Configuration Setup
 
-- Database connections
-- Task queue settings
-- Default crawling parameters
-- System limits and timeouts
+1. **Bootstrap the application** (minimal setup):
+   ```bash
+   # Edit bootstrap.conf with your database and Redis URLs
+   DATABASE_URL=postgresql://postgres:password@localhost:5432/news_aggregator
+   REDIS_URL=redis://localhost:6379/0
+   ```
+
+2. **Start the application**:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Configure through API**:
+   ```bash
+   # Initialize default configurations
+   curl -X POST "http://localhost:8000/api/v1/configuration/initialize"
+   
+   # Set your OpenAI API key
+   curl -X POST "http://localhost:8000/api/v1/configuration/" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "key": "openai_api_key",
+       "value": "your-api-key-here",
+       "category": "ai_models"
+     }'
+   ```
+
+### Configuration Categories
+
+- **AI Models**: API keys and model preferences for OpenAI, Claude
+- **Crawler**: Web crawling settings, delays, user agents
+- **Fact Checker**: Confidence thresholds, verification parameters
+- **Sources**: News source configurations and schedules
+
+### No Environment Files
+
+This application **does not use `.env` files** for user configuration. All user settings are managed through the database and API endpoints. This provides:
+
+- ✅ Runtime configuration updates without restart
+- ✅ Web UI for configuration management
+- ✅ Clean separation of infrastructure vs. user settings
+- ✅ Configuration history and auditability
+
+See [Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md) for detailed documentation.
 
 ## 📚 API Documentation
 
